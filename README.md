@@ -13,13 +13,12 @@
 To install the latest version:
 
 ```bash
-go install github.com/prestonvasquez/mongoproxy@latest
+go install github.com/prestonvasquez/mongoproxy/cmd@latest
 ```
 
-Or build it locally:
+Or build it locally in `bin/mongoproxy`:
 
 ```bash
-cd bin/
 bash build.sh
 ```
 
