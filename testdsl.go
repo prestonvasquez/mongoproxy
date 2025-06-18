@@ -9,9 +9,9 @@ import (
 
 // action is one step in the proxyTest sequence.
 type action struct {
-	DelayMs   int  `bson:"delayMs,omitempty"`   // milliseconds to wait
-	SendBytes int  `bson:"sendBytes,omitempty"` // how many bytes to forward
-	SendAll   bool `bson:"sendAll,omitempty"`   // forward remaining bytes
+	DelayMs   *int  `bson:"delayMs,omitempty"`   // milliseconds to wait
+	SendBytes *int  `bson:"sendBytes,omitempty"` // how many bytes to forward
+	SendAll   *bool `bson:"sendAll,omitempty"`   // forward remaining bytes
 }
 
 // testInstruction holds the ordered list of actions.

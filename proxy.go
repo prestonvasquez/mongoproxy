@@ -123,6 +123,7 @@ func proxyClientToMongo(src net.Conn, dst net.Conn) {
 			return
 		}
 		if instr != nil {
+
 			pendingMap.Set(src, instr)
 		}
 		// reconstruct
@@ -166,13 +167,13 @@ func applyActions(buf []byte, dst net.Conn, actions []action) {
 	offset := 0
 	sendAction := false
 	for _, act := range actions {
-		if act.DelayMs > 0 {
+		if act.DelayMs != nil {
 			log.Printf("Delaying %d ms before sending next action", act.DelayMs)
-			time.Sleep(time.Duration(act.DelayMs) * time.Millisecond)
+			time.Sleep(time.Duration(*act.DelayMs) * time.Millisecond)
 		}
-		if act.SendBytes > 0 {
-			log.Printf("Sending %d bytes from offset %d", act.SendBytes, offset)
-			end := offset + act.SendBytes
+		if act.SendBytes != nil {
+			log.Printf("Sending %d bytes from offset %d", *act.SendBytes, offset)
+			end := offset + *act.SendBytes
 			if end > len(buf) {
 				end = len(buf)
 			}
@@ -180,7 +181,7 @@ func applyActions(buf []byte, dst net.Conn, actions []action) {
 			offset = end
 			sendAction = true
 		}
-		if act.SendAll {
+		if act.SendAll != nil {
 			log.Printf("Sending remaining bytes from offset %d", offset)
 			dst.Write(buf[offset:])
 			offset = len(buf)

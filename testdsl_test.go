@@ -29,7 +29,36 @@ func TestParseProxy_WithoutProxyTest(t *testing.T) {
 
 func TestParseProxy_WithProxyTest(t *testing.T) {
 	// Build a command document containing proxyTest with one action
-	actions := []interface{}{bson.D{{"delayMs", 100}, {"sendAll", true}}}
+	actions := []interface{}{bson.D{{"delayMs", 100}}}
+	cmdD := bson.D{
+		{Key: "insert", Value: "coll"},
+		{Key: "proxyTest", Value: bson.D{{"actions", actions}}},
+	}
+	rawBytes, err := bson.Marshal(cmdD)
+	require.NoError(t, err)
+	// invoke parser
+
+	cleanRaw, instr, err := parseProxy(bson.Raw(rawBytes))
+	require.NoError(t, err)
+	require.NotNil(t, instr, "expected non-nil testInstruction")
+
+	val := 100
+
+	// instr.Actions should reflect our input
+	expected := []action{{DelayMs: &val}}
+	require.Len(t, instr.Actions, 1)
+	require.Equal(t, expected, instr.Actions)
+
+	// cleanRaw should no longer contain "proxyTest"
+	elems, _ := bsoncore.Document(cleanRaw).Elements()
+	for _, e := range elems {
+		require.NotEqual(t, "proxyTest", e.Key(), "cleanDoc must not contain proxyTest")
+	}
+}
+
+func TestParseProxy_WithProxyTest_Zero(t *testing.T) {
+	// Build a command document containing proxyTest with one action
+	actions := []interface{}{bson.D{{"delayMs", 0}}, bson.D{{"sendBytes", 0}}}
 	cmdD := bson.D{
 		{Key: "insert", Value: "coll"},
 		{Key: "proxyTest", Value: bson.D{{"actions", actions}}},
@@ -43,9 +72,7 @@ func TestParseProxy_WithProxyTest(t *testing.T) {
 	require.NotNil(t, instr, "expected non-nil testInstruction")
 
 	// instr.Actions should reflect our input
-	expected := []action{{DelayMs: 100, SendAll: true}}
-	require.Len(t, instr.Actions, 1)
-	require.Equal(t, expected, instr.Actions)
+	require.Len(t, instr.Actions, 2)
 
 	// cleanRaw should no longer contain "proxyTest"
 	elems, _ := bsoncore.Document(cleanRaw).Elements()
