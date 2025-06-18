@@ -13,7 +13,7 @@
 To install the latest version:
 
 ```bash
-go install github.com/prestonvasquez/mongoproxy/cmd@latest
+go install github.com/prestonvasquez/mongoproxy/cmd/mongoproxy@latest
 ```
 
 Or build it locally in `bin/mongoproxy`:
@@ -31,6 +31,12 @@ go test ./...
 ## 🔧 Usage 
 
 To simulate network-level faults during testing, you can include a special `proxyTest` field in your command document. This field should contain an `actions` array to instruct the proxy how to manipulate the server’s reply.
+
+| Action     | Parameter | Description                                            |
+|------------|-----------|--------------------------------------------------------|
+| `delayMs`  | number    | Pause forwarding for the specified milliseconds.       |
+| `sendBytes`| number    | Forward exactly that many bytes from the response.     |
+| `sendAll`  | boolean   | Forward all remaining bytes in the response.           |
 
 Example:
 
