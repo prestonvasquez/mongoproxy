@@ -1,6 +1,7 @@
 package mongoproxy
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"io"
 	"log"
@@ -32,11 +33,16 @@ func ListenAndServe(opts ...Option) {
 		opt(&cfg)
 	}
 
+	targetAddr, useTLS, err := resolveTarget(cfg)
+	if err != nil {
+		log.Fatalf("failed to resolve target address: %v", err)
+	}
+
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen on %s: %v", cfg.ListenAddr, err)
 	}
-	log.Printf("Proxy server listening on %s → %s", cfg.ListenAddr, cfg.TargetAddr)
+	log.Printf("Proxy server listening on %s → %s", cfg.ListenAddr, targetAddr)
 
 	for {
 		clientConn, err := ln.Accept()
@@ -44,14 +50,23 @@ func ListenAndServe(opts ...Option) {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConnection(clientConn, cfg.TargetAddr)
+		go handleConnection(clientConn, targetAddr, useTLS)
 	}
 }
 
-func handleConnection(clientConn net.Conn, targetAddr string) {
+func handleConnection(clientConn net.Conn, targetAddr string, useTLS bool) {
 	defer clientConn.Close()
 
-	serverConn, err := net.Dial("tcp", targetAddr)
+	var serverConn net.Conn
+	var err error
+
+	if useTLS {
+		serverConn, err = tls.Dial("tcp", targetAddr, &tls.Config{
+			InsecureSkipVerify: true, // Skip TLS verification for simplicity
+		})
+	} else {
+		serverConn, err = net.Dial("tcp", targetAddr)
+	}
 	if err != nil {
 		log.Printf("failed to dial target %s: %v", targetAddr, err)
 		return // <— bail if we can’t reach the real server
