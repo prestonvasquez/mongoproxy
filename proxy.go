@@ -33,7 +33,12 @@ func ListenAndServe(opts ...Option) {
 		opt(&cfg)
 	}
 
-	targetAddr, useTLS, err := resolveTarget(cfg)
+	targetURI := cfg.TargetURI
+	if targetURI == "" {
+		targetURI = "mongodb://" + cfg.TargetAddr
+	}
+
+	targetAddr, useTLS, err := resolveTarget(targetURI)
 	if err != nil {
 		log.Fatalf("failed to resolve target address: %v", err)
 	}
