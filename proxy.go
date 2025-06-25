@@ -52,7 +52,7 @@ func ListenAndServe(opts ...Option) {
 
 	targetAddr, err := resolveTarget(targetCS)
 	if err != nil {
-		log.Printf("failed to resolve target address: %v", err)
+		log.Fatalf("failed to resolve target address: %v", err)
 	}
 
 	targetConnInfo := connInfo{
