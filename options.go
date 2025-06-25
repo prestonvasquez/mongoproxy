@@ -46,22 +46,17 @@ func WithTargetURI(uri string) Option {
 //
 // TODO: Likely for the SRV solution to work we will need to perform hello
 // TODO: commands against each node to determine which one is the primary.
-func resolveTarget(targetURI string) (string, bool, error) {
-	cs, err := connstring.Parse(targetURI)
-	if err != nil {
-		return "", false, err
-	}
-
-	if strings.EqualFold(cs.Scheme, "mongodb+srv") {
+func resolveTarget(targetConnString *connstring.ConnString) (string, error) {
+	if strings.EqualFold(targetConnString.Scheme, "mongodb+srv") {
 		panic("no support for mongodb+srv yet")
 	}
 
-	primaryAddr, err := findPrimary(targetURI, cs.Hosts)
+	primaryAddr, err := findPrimary(targetConnString.Original, targetConnString.Hosts)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to find primary: %w", err)
+		return "", fmt.Errorf("failed to find primary: %w", err)
 	}
 
-	return primaryAddr, false, nil
+	return primaryAddr, nil
 }
 
 // findPrimary takes the original URI (so we can preserver options) and list of
@@ -75,10 +70,9 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 		}
 
 		u.Host = h
-		u.Path = "/"
-		q := u.Query()
-		q.Set("directConnection", "true")
-		u.RawQuery = q.Encode()
+		//u.Path = "/"
+		//q := u.Query()
+		//u.RawQuery = q.Encode()
 
 		client, err := mongo.Connect(options.Client().ApplyURI(u.String()))
 		if err != nil {

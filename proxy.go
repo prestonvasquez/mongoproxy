@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/connstring"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/wiremessage"
 )
 
@@ -20,6 +22,11 @@ const (
 	defaultTargetPort = "27017"
 	defaultTargetAddr = "127.0.0.1"
 )
+
+type connInfo struct {
+	cs   *connstring.ConnString
+	addr string // resolved target address
+}
 
 // ListenAndServe starts the proxy on listenAddr (or default)
 // forwarding to targetAddr (or default).
@@ -38,15 +45,26 @@ func ListenAndServe(opts ...Option) {
 		targetURI = "mongodb://" + cfg.TargetAddr
 	}
 
-	targetAddr, useTLS, err := resolveTarget(targetURI)
+	targetCS, err := connstring.Parse(targetURI)
 	if err != nil {
-		log.Fatalf("failed to resolve target address: %v", err)
+		log.Fatalf("failed to parse target URI %q: %v", targetURI, err)
+	}
+
+	targetAddr, err := resolveTarget(targetCS)
+	if err != nil {
+		log.Printf("failed to resolve target address: %v", err)
+	}
+
+	targetConnInfo := connInfo{
+		cs:   targetCS,
+		addr: targetAddr,
 	}
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen on %s: %v", cfg.ListenAddr, err)
 	}
+
 	log.Printf("Proxy server listening on %s → %s", cfg.ListenAddr, targetAddr)
 
 	for {
@@ -55,25 +73,74 @@ func ListenAndServe(opts ...Option) {
 			log.Printf("accept error: %v", err)
 			continue
 		}
-		go handleConnection(clientConn, targetAddr, useTLS)
+		go handleConnection(clientConn, targetConnInfo)
 	}
 }
 
-func handleConnection(clientConn net.Conn, targetAddr string, useTLS bool) {
+//func dialTLS(ci connInfo) (net.Conn, error) {
+//	cs := ci.cs
+//	tlsCfg := &tls.Config{
+//		ServerName:         cs.Hosts[0],    // Use the first host for SNI
+//		InsecureSkipVerify: cs.SSLInsecure, // Skip TLS verification for simplicity
+//	}
+//
+//	// Load CA if specified
+//	if cs.SSLCaFileSet {
+//		roots := x509.NewCertPool()
+//
+//		pem, err := os.ReadFile(cs.SSLCaFile)
+//		if err != nil {
+//			return nil, fmt.Errorf("failed to read CA file %s: %w", cs.SSLCaFile, err)
+//		}
+//
+//		if !roots.AppendCertsFromPEM(pem) {
+//			return nil, fmt.Errorf("failed to append CA certs from %s", cs.SSLCaFile)
+//		}
+//
+//		tlsCfg.RootCAs = roots
+//	}
+//
+//	// Load client certificate/key pair
+//	if cs.SSLCertificateFileSet && cs.SSLPrivateKeyFileSet {
+//		cert, err := tls.LoadX509KeyPair(cs.SSLCertificateFile, cs.SSLPrivateKeyFile)
+//		if err != nil {
+//			return nil, fmt.Errorf("failed to load client cert/key pair: %w", err)
+//		}
+//
+//		tlsCfg.Certificates = []tls.Certificate{cert}
+//	} else if cs.SSLClientCertificateKeyFileSet {
+//		cert, err := tls.LoadX509KeyPair(cs.SSLClientCertificateKeyFile, cs.SSLClientCertificateKeyFile)
+//		if err != nil {
+//			return nil, fmt.Errorf("failed to load client cert/key pair: %w", err)
+//		}
+//
+//		tlsCfg.Certificates = []tls.Certificate{cert}
+//	}
+//
+//	return tls.Dial("tcp", ci.addr, tlsCfg)
+//}
+
+func handleConnection(clientConn net.Conn, targetConnInfo connInfo) {
 	defer clientConn.Close()
 
 	var serverConn net.Conn
 	var err error
 
-	if useTLS {
-		serverConn, err = tls.Dial("tcp", targetAddr, &tls.Config{
-			InsecureSkipVerify: true, // Skip TLS verification for simplicity
-		})
+	targetCS := targetConnInfo.cs
+
+	// Let the driver build a clientoptions for us
+	clientOpts := options.Client().ApplyURI(targetConnInfo.cs.Original)
+
+	// Decide TLS v plain TCP from cs.SSL
+	if targetCS.SSLSet && targetCS.SSL {
+		serverConn, err = tls.Dial("tcp", targetConnInfo.addr, clientOpts.TLSConfig)
+		log.Printf("dialing target %s with TLS", targetConnInfo.addr)
 	} else {
-		serverConn, err = net.Dial("tcp", targetAddr)
+		serverConn, err = net.Dial("tcp", targetConnInfo.addr)
 	}
+
 	if err != nil {
-		log.Printf("failed to dial target %s: %v", targetAddr, err)
+		log.Printf("failed to dial target %s: %v", targetConnInfo.addr, err)
 		return // <— bail if we can’t reach the real server
 	}
 	defer serverConn.Close()
