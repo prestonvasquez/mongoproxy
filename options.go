@@ -92,9 +92,6 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 		}
 
 		client.Disconnect(context.Background())
-		if res.IsWritablePrimary {
-			return h, nil
-		}
 
 		if res.Primary != "" {
 			return res.Primary, nil
