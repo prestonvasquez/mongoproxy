@@ -162,14 +162,15 @@ func proxyClientToMongo(src net.Conn, dst net.Conn) {
 		if err != nil {
 			return
 		}
+
 		// parse header
-		_, _, _, opcode, body, ok := wiremessage.ReadHeader(raw)
+		length, requestID, responseTo, opcode, body, ok := wiremessage.ReadHeader(raw)
 		if !ok || opcode != wiremessage.OpMsg {
 			dst.Write(raw)
 			continue
 		}
 		// skip flags
-		_, body, ok = wiremessage.ReadMsgFlags(body)
+		flags, body, ok := wiremessage.ReadMsgFlags(body)
 		if !ok {
 			dst.Write(raw)
 			continue
@@ -180,39 +181,51 @@ func proxyClientToMongo(src net.Conn, dst net.Conn) {
 			dst.Write(raw)
 			continue
 		}
-		// read the first document
-		doc, _, ok := wiremessage.ReadMsgSectionSingleDocument(body)
-		if !ok {
-			dst.Write(raw)
-			continue
-		}
-		// strip proxyTest
-		cleanDoc, instr, err := parseProxy(bson.Raw(doc))
-		if err != nil {
-			log.Printf("parseProxy error: %v", err)
-			return
-		}
-		if instr != nil {
 
-			pendingMap.Set(src, instr)
+		var (
+			doc      []byte
+			rest     []byte
+			instr    *testInstruction
+			cleanDoc []byte
+		)
+
+		if stype == wiremessage.SingleDocument {
+			doc, rest, ok = wiremessage.ReadMsgSectionSingleDocument(body)
+			if ok {
+				// Strip out the proxyTest and capture the instructions.
+				cleanDoc, instr, err = parseProxy(bson.Raw(doc))
+				if err != nil {
+					log.Printf("parseProxy error: %v", err)
+					return
+				}
+				if instr != nil {
+					pendingMap.Set(src, instr)
+				}
+			} else {
+				dst.Write(raw)
+				continue
+			}
+		} else {
+			cleanDoc = nil
 		}
-		// reconstruct
-		docStart := 16 + 4 + 1
-		origLen := len(doc)
-		newLen := len(raw) - origLen + len(cleanDoc)
-		// length prefix
-		out := make([]byte, 0, newLen)
-		lenBuf := make([]byte, 4)
-		binary.LittleEndian.PutUint32(lenBuf, uint32(newLen))
-		out = append(out, lenBuf...)
-		// header+flags+sectionType
-		out = append(out, raw[4:docStart]...)
-		// cleaned doc
-		out = append(out, cleanDoc...)
-		// rest
-		out = append(out, raw[docStart+origLen:]...)
-		// send
-		dst.Write(out)
+
+		// Rebuild the op message
+		var newLen int32
+		var payload []byte
+		if stype == wiremessage.SingleDocument {
+			newLen = 16 + 4 + 1 + int32(len(cleanDoc)) + int32(len(rest))
+			payload = append(cleanDoc, rest...)
+		} else {
+			newLen = length
+			payload = raw[16:]
+		}
+
+		buf := wiremessage.AppendHeader(nil, newLen, requestID, responseTo, wiremessage.OpMsg)
+		buf = wiremessage.AppendMsgFlags(buf, flags)
+		buf = wiremessage.AppendMsgSectionType(buf, stype)
+		buf = append(buf, payload...)
+
+		dst.Write(buf)
 	}
 }
 
