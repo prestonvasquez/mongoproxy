@@ -3,7 +3,6 @@ package mongoproxy
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -20,6 +19,8 @@ type Config struct {
 	ListenAddr string // Address to listen for incoming connections
 	TargetAddr string // Address of the target MongoDB server
 	TargetURI  string // URI of the target MongoDB server
+	CAFile     string // Optional CA file for TLS connections
+	KeyFile    string // Optional key file for TLS connections
 }
 
 // Option defines a function type that modifies the Config.
@@ -43,6 +44,20 @@ func WithTargetAddr(addr string) Option {
 func WithTargetURI(uri string) Option {
 	return func(cfg *Config) {
 		cfg.TargetURI = uri
+	}
+}
+
+// WithCAFile sets the CA file for TLS connections.
+func WithCAFile(caFile string) Option {
+	return func(cfg *Config) {
+		cfg.CAFile = caFile
+	}
+}
+
+// WithKeyFile sets the key file for TLS connections.
+func WithKeyFile(keyFile string) Option {
+	return func(cfg *Config) {
+		cfg.KeyFile = keyFile
 	}
 }
 
@@ -73,7 +88,7 @@ func resolveTarget(targetConnString *connstring.ConnString) (string, error) {
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve target address %q: %w", targetConnString.Original, err)
+		return "", err
 	}
 
 	return primaryAddr, nil
@@ -108,13 +123,11 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 			return "", fmt.Errorf("failed to run hello command on %s: %w", u.String(), err)
 		}
 
-		log.Printf("hello response from %s: %+v", u.String(), res)
+		fmt.Printf("Found primary %s: %s, isWritablePrimary: %t\n", h, res.Primary, res.IsWritablePrimary)
 
 		client.Disconnect(context.Background())
 
-		if res.Primary != "" {
-			return res.Primary, nil
-		} else if res.IsWritablePrimary {
+		if res.Primary != "" || res.IsWritablePrimary {
 			return h, nil
 		}
 	}

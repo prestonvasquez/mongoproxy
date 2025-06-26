@@ -3,9 +3,11 @@ package mongoproxy
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"sync"
 	"time"
 
@@ -45,10 +47,37 @@ func ListenAndServe(opts ...Option) {
 		targetURI = "mongodb://" + cfg.TargetAddr
 	}
 
-	targetCS, err := connstring.Parse(targetURI)
+	// Add the ca-file and key-file query parameters--make the driver construct
+	// the precised tls configuration.
+	u, err := url.Parse(targetURI)
 	if err != nil {
 		log.Fatalf("failed to parse target URI %q: %v", targetURI, err)
 	}
+
+	u.Path = "/"
+
+	// grab the existing query params (or an empty map if none)
+	q := u.Query()
+
+	if cfg.CAFile != "" {
+		q.Set("tls", "true")
+		q.Set("tlsCAFile", cfg.CAFile)
+		q.Set("directConnection", "true")
+	}
+	if cfg.KeyFile != "" {
+		q.Set("tls", "true")
+		q.Set("tlsCertificateKeyFile", cfg.KeyFile)
+	}
+
+	// write them back into the URL
+	u.RawQuery = q.Encode()
+
+	targetCS, err := connstring.Parse(u.String())
+	if err != nil {
+		log.Fatalf("failed to parse target URI %q: %v", u, err)
+	}
+
+	fmt.Printf("Parsed target connection string: %s\n", targetCS.Original)
 
 	targetAddr, err := resolveTarget(targetCS)
 	if err != nil {
@@ -59,6 +88,8 @@ func ListenAndServe(opts ...Option) {
 		cs:   targetCS,
 		addr: targetAddr,
 	}
+
+	fmt.Printf("Target connection string: %s\n", targetConnInfo.cs.Original)
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
