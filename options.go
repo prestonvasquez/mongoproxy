@@ -3,6 +3,7 @@ package mongoproxy
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 
@@ -76,6 +77,7 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 
 		client, err := mongo.Connect(options.Client().ApplyURI(u.String()))
 		if err != nil {
+			log.Printf("failed to connect to %s: %v", u.String(), err)
 			continue
 		}
 
@@ -87,6 +89,7 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 		cmd := bson.D{{Key: "hello", Value: 1}}
 
 		if err := client.Database("admin").RunCommand(context.Background(), cmd).Decode(&res); err != nil {
+			log.Printf("failed to run hello command on %s: %v", u.String(), err)
 			client.Disconnect(context.Background())
 			continue
 		}
