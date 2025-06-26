@@ -3,6 +3,7 @@ package mongoproxy
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -25,13 +26,13 @@ const (
 )
 
 type connInfo struct {
-	cs   *connstring.ConnString
-	addr string // resolved target address
+	cs   *connstring.ConnString // driver-parsed connection string
+	addr string                 // resolved target address
 }
 
-// ListenAndServe starts the proxy on listenAddr (or default)
-// forwarding to targetAddr (or default).
-func ListenAndServe(opts ...Option) {
+// ListenAndServe starts the proxy on listenAddr (or default) forwarding to
+// targetAddr (or default).
+func ListenAndServe(opts ...Option) error {
 	cfg := Config{
 		ListenAddr: defaultListenAddr + ":" + defaultListenPort,
 		TargetAddr: defaultTargetAddr + ":" + defaultTargetPort,
@@ -50,12 +51,12 @@ func ListenAndServe(opts ...Option) {
 	// the precised tls configuration.
 	u, err := url.Parse(targetURI)
 	if err != nil {
-		log.Fatalf("failed to parse target URI %q: %v", targetURI, err)
+		return fmt.Errorf("failed to parse target URI %q: %v", targetURI, err)
 	}
 
 	u.Path = "/"
 
-	// grab the existing query params (or an empty map if none)
+	// Grab the existing query params (or an empty map if none).
 	q := u.Query()
 
 	if cfg.CAFile != "" {
@@ -68,17 +69,17 @@ func ListenAndServe(opts ...Option) {
 		q.Set("tlsCertificateKeyFile", cfg.KeyFile)
 	}
 
-	// write them back into the URL
+	// Write the query parameters back to the URL.
 	u.RawQuery = q.Encode()
 
 	targetCS, err := connstring.Parse(u.String())
 	if err != nil {
-		log.Fatalf("failed to parse target URI %q: %v", u, err)
+		return fmt.Errorf("failed to parse target connection string %q: %v", u.String(), err)
 	}
 
 	targetAddr, err := resolveTarget(targetCS)
 	if err != nil {
-		log.Fatalf("failed to resolve target address: %v", err)
+		return fmt.Errorf("failed to resolve target address: %v", err)
 	}
 
 	targetConnInfo := connInfo{
@@ -88,7 +89,7 @@ func ListenAndServe(opts ...Option) {
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
-		log.Fatalf("failed to listen on %s: %v", cfg.ListenAddr, err)
+		return fmt.Errorf("failed to listen on %s: %v", cfg.ListenAddr, err)
 	}
 
 	log.Printf("Proxy server listening on %s → %s", cfg.ListenAddr, targetAddr)
@@ -96,8 +97,7 @@ func ListenAndServe(opts ...Option) {
 	for {
 		clientConn, err := ln.Accept()
 		if err != nil {
-			log.Printf("accept error: %v", err)
-			continue
+			return fmt.Errorf("failed to accept connection: %v", err)
 		}
 		go handleConnection(clientConn, targetConnInfo)
 	}
@@ -155,27 +155,32 @@ func (c *connMap) Take(conn net.Conn) *testInstruction {
 	return instr
 }
 
-// proxyClientToMongo intercepts OP_MSG, strips proxyTest, and forwards cleaned message.
+// proxyClientToMongo intercepts OP_MSG, strips proxyTest, and forwards
+// cleaned message.
 func proxyClientToMongo(src net.Conn, dst net.Conn) {
 	for {
 		raw, err := readWireMessage(src)
 		if err != nil {
+			log.Printf("error reading from client: %v", err)
+
 			return
 		}
 
-		// parse header
+		// Parse the wire message header.
 		length, requestID, responseTo, opcode, body, ok := wiremessage.ReadHeader(raw)
 		if !ok || opcode != wiremessage.OpMsg {
 			dst.Write(raw)
 			continue
 		}
-		// skip flags
+
+		// Skip the flags and read the body.
 		flags, body, ok := wiremessage.ReadMsgFlags(body)
 		if !ok {
 			dst.Write(raw)
 			continue
 		}
-		// skip section type
+
+		// Skip the section type and read the body.
 		stype, body, ok := wiremessage.ReadMsgSectionType(body)
 		if !ok || stype != wiremessage.SingleDocument {
 			dst.Write(raw)
@@ -195,21 +200,24 @@ func proxyClientToMongo(src net.Conn, dst net.Conn) {
 				// Strip out the proxyTest and capture the instructions.
 				cleanDoc, instr, err = parseProxy(bson.Raw(doc))
 				if err != nil {
-					log.Printf("parseProxy error: %v", err)
+					log.Printf("error parsing proxyTest: %v", err)
+
 					return
 				}
+
 				if instr != nil {
 					pendingMap.Set(src, instr)
 				}
 			} else {
 				dst.Write(raw)
+
 				continue
 			}
 		} else {
 			cleanDoc = nil
 		}
 
-		// Rebuild the op message
+		// Reconstruct the wire message without the proxyTest section.
 		var newLen int32
 		var payload []byte
 		if stype == wiremessage.SingleDocument {
@@ -281,6 +289,8 @@ func proxyMongoToClient(src net.Conn, dst net.Conn) {
 	for {
 		raw, err := readWireMessage(src)
 		if err != nil {
+			log.Printf("error reading from MongoDB: %v", err)
+
 			return
 		}
 
@@ -298,7 +308,9 @@ func proxyMongoToClient(src net.Conn, dst net.Conn) {
 
 	// Forward remaining data
 	if _, err := io.Copy(dst, src); err != nil {
-		log.Printf("error proxying mongo→client: %v", err)
+		log.Printf("error forwarding remaining data: %v", err)
+
+		return
 	}
 
 	// Half-close write side

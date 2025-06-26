@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 
 	"github.com/prestonvasquez/mongoproxy"
 )
@@ -35,5 +36,7 @@ func main() {
 	}
 
 	// Start the proxy.
-	mongoproxy.ListenAndServe(opts...)
+	if err := mongoproxy.ListenAndServe(opts...); err != nil {
+		log.Fatalf("failed to start proxy: %v", err)
+	}
 }
