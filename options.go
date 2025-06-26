@@ -90,10 +90,6 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 		}
 
 		u.Host = h
-		//u.Path = "/"
-		//q := u.Query()
-		//u.RawQuery = q.Encode()
-
 		client, err := mongo.Connect(options.Client().ApplyURI(u.String()))
 		if err != nil {
 			return "", fmt.Errorf("failed to connect to %s: %w", u.String(), err)
@@ -118,6 +114,8 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 
 		if res.Primary != "" {
 			return res.Primary, nil
+		} else if res.IsWritablePrimary {
+			return h, nil
 		}
 	}
 

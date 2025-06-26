@@ -77,49 +77,6 @@ func ListenAndServe(opts ...Option) {
 	}
 }
 
-//func dialTLS(ci connInfo) (net.Conn, error) {
-//	cs := ci.cs
-//	tlsCfg := &tls.Config{
-//		ServerName:         cs.Hosts[0],    // Use the first host for SNI
-//		InsecureSkipVerify: cs.SSLInsecure, // Skip TLS verification for simplicity
-//	}
-//
-//	// Load CA if specified
-//	if cs.SSLCaFileSet {
-//		roots := x509.NewCertPool()
-//
-//		pem, err := os.ReadFile(cs.SSLCaFile)
-//		if err != nil {
-//			return nil, fmt.Errorf("failed to read CA file %s: %w", cs.SSLCaFile, err)
-//		}
-//
-//		if !roots.AppendCertsFromPEM(pem) {
-//			return nil, fmt.Errorf("failed to append CA certs from %s", cs.SSLCaFile)
-//		}
-//
-//		tlsCfg.RootCAs = roots
-//	}
-//
-//	// Load client certificate/key pair
-//	if cs.SSLCertificateFileSet && cs.SSLPrivateKeyFileSet {
-//		cert, err := tls.LoadX509KeyPair(cs.SSLCertificateFile, cs.SSLPrivateKeyFile)
-//		if err != nil {
-//			return nil, fmt.Errorf("failed to load client cert/key pair: %w", err)
-//		}
-//
-//		tlsCfg.Certificates = []tls.Certificate{cert}
-//	} else if cs.SSLClientCertificateKeyFileSet {
-//		cert, err := tls.LoadX509KeyPair(cs.SSLClientCertificateKeyFile, cs.SSLClientCertificateKeyFile)
-//		if err != nil {
-//			return nil, fmt.Errorf("failed to load client cert/key pair: %w", err)
-//		}
-//
-//		tlsCfg.Certificates = []tls.Certificate{cert}
-//	}
-//
-//	return tls.Dial("tcp", ci.addr, tlsCfg)
-//}
-
 func handleConnection(clientConn net.Conn, targetConnInfo connInfo) {
 	defer clientConn.Close()
 
