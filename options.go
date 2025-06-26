@@ -123,8 +123,6 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 			return "", fmt.Errorf("failed to run hello command on %s: %w", u.String(), err)
 		}
 
-		fmt.Printf("Found primary %s: %s, isWritablePrimary: %t\n", h, res.Primary, res.IsWritablePrimary)
-
 		client.Disconnect(context.Background())
 
 		if res.Primary != "" || res.IsWritablePrimary {

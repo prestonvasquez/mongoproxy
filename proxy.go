@@ -3,7 +3,6 @@ package mongoproxy
 import (
 	"crypto/tls"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -77,8 +76,6 @@ func ListenAndServe(opts ...Option) {
 		log.Fatalf("failed to parse target URI %q: %v", u, err)
 	}
 
-	fmt.Printf("Parsed target connection string: %s\n", targetCS.Original)
-
 	targetAddr, err := resolveTarget(targetCS)
 	if err != nil {
 		log.Fatalf("failed to resolve target address: %v", err)
@@ -88,8 +85,6 @@ func ListenAndServe(opts ...Option) {
 		cs:   targetCS,
 		addr: targetAddr,
 	}
-
-	fmt.Printf("Target connection string: %s\n", targetConnInfo.cs.Original)
 
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
