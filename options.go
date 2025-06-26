@@ -94,6 +94,8 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 			continue
 		}
 
+		log.Printf("hello response from %s: %+v", u.String(), res)
+
 		client.Disconnect(context.Background())
 
 		if res.Primary != "" {
