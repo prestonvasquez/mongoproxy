@@ -6,12 +6,15 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/x/mongo/driver/connstring"
 )
+
+const resolveTargetAttempts = 5 // Number of attempts to resolve the target address
 
 type Config struct {
 	ListenAddr string // Address to listen for incoming connections
@@ -52,9 +55,25 @@ func resolveTarget(targetConnString *connstring.ConnString) (string, error) {
 		panic("no support for mongodb+srv yet")
 	}
 
-	primaryAddr, err := findPrimary(targetConnString.Original, targetConnString.Hosts)
+	var primaryAddr string
+	var err error
+
+	// Attempt to resolve the target address by finding the primary node.
+	for i := 0; i < resolveTargetAttempts; i++ {
+		primaryAddr, err = findPrimary(targetConnString.Original, targetConnString.Hosts)
+		if err == nil {
+			break // found primary, exit loop
+		}
+
+		if i < resolveTargetAttempts-1 {
+			time.Sleep(1 * time.Second) // wait before retrying
+
+			continue
+		}
+	}
+
 	if err != nil {
-		return "", fmt.Errorf("failed to find primary: %w", err)
+		return "", fmt.Errorf("failed to resolve target address %q: %w", targetConnString.Original, err)
 	}
 
 	return primaryAddr, nil
@@ -67,7 +86,7 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 	for _, h := range hosts {
 		u, err := url.Parse(baseURI)
 		if err != nil {
-			continue
+			return "", fmt.Errorf("failed to parse base URI %q: %w", baseURI, err)
 		}
 
 		u.Host = h
@@ -77,8 +96,7 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 
 		client, err := mongo.Connect(options.Client().ApplyURI(u.String()))
 		if err != nil {
-			log.Printf("failed to connect to %s: %v", u.String(), err)
-			continue
+			return "", fmt.Errorf("failed to connect to %s: %w", u.String(), err)
 		}
 
 		var res struct {
@@ -89,9 +107,9 @@ func findPrimary(baseURI string, hosts []string) (string, error) {
 		cmd := bson.D{{Key: "hello", Value: 1}}
 
 		if err := client.Database("admin").RunCommand(context.Background(), cmd).Decode(&res); err != nil {
-			log.Printf("failed to run hello command on %s: %v", u.String(), err)
 			client.Disconnect(context.Background())
-			continue
+
+			return "", fmt.Errorf("failed to run hello command on %s: %w", u.String(), err)
 		}
 
 		log.Printf("hello response from %s: %+v", u.String(), res)
